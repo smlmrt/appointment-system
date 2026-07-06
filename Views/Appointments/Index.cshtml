@@ -1,0 +1,143 @@
+@{
+    ViewData["Title"] = "Randevu Takvimi";
+}
+
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+
+<div class="container mt-4">
+    <h2 class="text-center mb-4">İnteraktif Randevu Sistemi</h2>
+    <div id='calendar'></div>
+</div>
+
+<div class="modal fade" id="appointmentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Randevu Al</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+            <label class="form-label">Adınız Soyadınız</label>
+            <input type="text" id="customerName" class="form-control" placeholder="Örn: Ahmet Yılmaz">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Başlangıç Tarihi ve Saati:</label>
+            <input type="datetime-local" id="startTimeInput" class="form-control">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Bitiş Tarihi ve Saati:</label>
+            <input type="datetime-local" id="endTimeInput" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+        <button type="button" class="btn btn-success" id="saveAppointmentBtn">Kaydet</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var calendarEl = document.getElementById('calendar');
+        var appointmentModal = new bootstrap.Modal(document.getElementById('appointmentModal'));
+
+        // JavaScript ile tarih nesnesini HTML5 datetime-local input'unun anlayacağı formata (yyyy-MM-ddTHH:mm) getiren fonksiyon
+        function formatToLocalISO(dateObj) {
+            var year = dateObj.getFullYear();
+            var month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            var day = String(dateObj.getDate()).padStart(2, '0');
+            var hours = String(dateObj.getHours()).padStart(2, '0');
+            var minutes = String(dateObj.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        var calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'timeGridWeek',
+            locale: 'tr',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            },
+            slotMinTime: '09:00:00', // İşletme açılış saati
+            slotMaxTime: '18:00:00', // İşletme kapanış saati
+            allDaySlot: false,
+            selectable: true,
+            
+            slotDuration: '01:00:00', // Takvimi 1'er saatlik bloklara böler
+            snapDuration: '01:00:00', // Seçimi tam saatlere mıknatıs gibi yapıştırır
+            
+            events: '/Appointments/GetAppointments', 
+            
+            // Kullanıcı takvimde mavi alana tıkladığında
+            select: function(info) {
+                // Tıklanan yerin saatini otomatik alıp input formatına çeviriyoruz
+                var startLocal = formatToLocalISO(new Date(info.start));
+                var endLocal = formatToLocalISO(new Date(info.end));
+                
+                // İnput değerlerini otomatik dolduruyoruz (Ama kilitlemiyoruz!)
+                document.getElementById('startTimeInput').value = startLocal;
+                document.getElementById('endTimeInput').value = endLocal;
+                
+                document.getElementById('customerName').value = '';
+                appointmentModal.show();
+            }
+        });
+
+        calendar.render();
+
+        // Kaydet Butonuna Basıldığında
+        document.getElementById('saveAppointmentBtn').addEventListener('click', function() {
+            var customerName = document.getElementById('customerName').value;
+            var finalStart = document.getElementById('startTimeInput').value;
+            var finalEnd = document.getElementById('endTimeInput').value;
+            
+            if(!customerName) {
+                alert("Lütfen adınızı giriniz.");
+                return;
+            }
+            if(!finalStart || !finalEnd) {
+                alert("Lütfen geçerli bir tarih ve saat seçiniz.");
+                return;
+            }
+
+            // Kullanıcının en son elle girdiyse veya seçtiyse o saat verilerini paketliyoruz
+            var data = {
+                CustomerName: customerName,
+                StartDate: finalStart,
+                EndDate: finalEnd
+            };
+
+            fetch('/Appointments/CreateAppointment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                if (response.status === 409) {
+                    return response.text().then(msg => { throw new Error(msg); });
+                }
+                if (!response.ok) {
+                    throw new Error("Sistemsel bir hata oluştu.");
+                }
+                return response.json();
+            })
+            .then(result => {
+                alert(result.message);
+                appointmentModal.hide();
+                calendar.refetchEvents(); // Takvimi güncelle
+            })
+            .catch(error => {
+                alert(error.message); // Eşzamanlılık hatasını yakala
+                appointmentModal.hide();
+                calendar.refetchEvents();
+            });
+        });
+    });
+</script>
+}
